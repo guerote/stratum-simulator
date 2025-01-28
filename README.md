@@ -12,7 +12,7 @@ Compile using the Arduino IDE.
 Modify the defines, if needed, to suit your needs.
 WiFi information can be hard-coded in the defines or set through the serial console.
 
-## Useage
+## Usage
 
 Get the simulator's IP address from the serial console.
 
