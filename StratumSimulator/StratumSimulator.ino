@@ -420,12 +420,15 @@ void handleSubmit(StratumClient& sClient, JsonDocument &doc) {
   
   char hBuffer[65];
 
+  const char* userName = doc["params"][0];
   const char* jid = doc["params"][1];
   const char* extraNonce2 = doc["params"][2];
   const char* timestamp = doc["params"][3];
   const char* nonce = doc["params"][4];
 
   HashBlock hb;
+
+  logIt(LOG_LEVEL_DEBUG, "Work submitted:\n*************\nUser Name: %s\nJob ID:%s\nExtra Nonce 2: %s\nTimestamp: %s\nNonce: %s\n", userName, jid, extraNonce2, timestamp, nonce);
 
   // See if this is the job we're currently working on
   // There is no backog, so you will see rejections.
@@ -526,9 +529,11 @@ void handleSubscribe(StratumClient& sClient, JsonDocument &doc) {
   uint32_t en1 = esp_random();   // Create an extra nonce 1
   hexEncode32(sClient.extraNonce1, 4, en1);
   
-  sprintf(resp, "{\"error\": null, \"id\": %lu, \"result\": [[\"mining.notify\", \"%x\"], \"%s\", %d]}\n", 
-      sClient.lastId, sClient.sessionId, sClient.extraNonce1, sClient.extraNonce2Size);
+  sprintf(resp, "{\"error\": null, \"id\": %lu, \"result\": [[[\"mining.set_difficulty\", \"%x\"],[\"mining.notify\", \"%x\"]], \"%s\", %d]}\n", 
+      sClient.lastId, sClient.sessionId, sClient.sessionId, sClient.extraNonce1, sClient.extraNonce2Size);
 
+  logIt(LOG_LEVEL_DEBUG, "Server Message: %s\n", resp);
+  
   sClient.client.print(resp);
   sClient.subscribed = true;
   
@@ -546,6 +551,9 @@ void handleSuggestDifficulty(StratumClient& sClient, JsonDocument &doc) {
 
 // Receive a message from the client and process it
 void receiveClientMsg(StratumClient& sClient, String& msg) {
+  
+  logIt(LOG_LEVEL_DEBUG, "Client Message: %s\n", msg.c_str());
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, msg);
   if( err == DeserializationError::Ok ) {
@@ -570,7 +578,6 @@ void receiveClientMsg(StratumClient& sClient, String& msg) {
       }
 
     }
-
   }
 }
 
@@ -600,6 +607,13 @@ void wifiReconnect() {
       delay(200);
       waitTime -= 200;
     }
+
+    if( WiFi.isConnected() ) {
+      Serial.print("Got IP Address: ");
+      Serial.println(WiFi.localIP());
+      saveWiFiInfo();
+    }
+        
   }
 
 }
@@ -655,10 +669,12 @@ void handleSerialCommand(const char* sc) {
     Serial.printf("Setting ssid to %s\n", parm);
     strncpy(ssid, parm, MAX_SSID_LENGTH);
     ssid[MAX_SSID_LENGTH - 1] = '\0';
+    wifiReconnect();
   } else if( strncasecmp(sc, "password ", 9) == 0 && parm) {
     Serial.printf("Setting password to %s\n", parm);
     strncpy(password, parm, MAX_PASSWORD_LENGTH);
     password[MAX_PASSWORD_LENGTH - 1] = '\0';
+    wifiReconnect();
   } else if( strcasecmp(sc, "newjob") == 0 ) {
     newJobRequired = true;
     Serial.printf("Creating new job.\n");
@@ -717,18 +733,6 @@ void loop() {
   // Check for WiFi connection
   if( ! WiFi.isConnected() ) {
     wifiReconnect();
-    if( WiFi.isConnected() ) {
-      Serial.print("Got IP Address: ");
-      Serial.println(WiFi.localIP());
-      saveWiFiInfo();
-      showDisconnectMessage = true;
-    } else {
-      delay(50); // Just in case we came back immediately from reconnect
-      if( showDisconnectMessage ) {
-        Serial.printf("You are not connected to WiFi.\n");
-        showDisconnectMessage = false;
-      }
-    }
     return;
   }
 
@@ -741,6 +745,7 @@ void loop() {
   // Check for new client connections
   // and accept if we have an opening.
   if( server.hasClient() ) {
+    logIt(LOG_LEVEL_DEBUG, "Client attempting connection...\n");
     for(i = 0; i < MAX_CLIENTS; i++) {
       if( ! stratumClients[i].client || ! stratumClients[i].client.connected() ) {
         stratumClients[i].client = server.available();
