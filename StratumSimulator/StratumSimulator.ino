@@ -23,7 +23,7 @@
 #define STRATUM_LISTEN_PORT 3333          // Port our server will listen on
 #define JOB_CHANGE_FREQUENCY 600          // Seconds between job changes
 #define MAX_CLIENTS 10                    // Number of concurrent clients
-#define POOL_DIFFICULTY 0.0001            // Starting difficulty for our pool
+#define POOL_DIFFICULTY 0.001             // Starting difficulty for our pool
 #define BLOCK_DIFFICULTY 1.0              // The difficulty for our fake blocks - MUST BE AT LEAST 1.0
 #define ALLOW_DIFFICULTY_SUGGESTION true  // true|false - If true, client difficulty suggestions will be honored
 #define BLOCK_TIME 0x6797e794             // Value of block time at start (UNIX timestamp)
@@ -34,6 +34,8 @@
 
 // Defines you don't really need to change
 #define DEFAULT_NBITS 0x1D00FFFF          // Any calculation errors will result in the default difficulty value of 1
+
+
 #define EXTRA_NONCE2_SIZE 4               
 #define MERKLE_BRANCHES 4
 
@@ -53,9 +55,10 @@
 #define LOG_LEVEL_NONE 0
 #define LOG_LEVEL_DEBUG 10
 
-
 #define MAX_SSID_LENGTH 32
 #define MAX_PASSWORD_LENGTH 64
+
+#define BYTESWAP32(z) ((uint32_t)((z&0xFF)<<24|((z>>8)&0xFF)<<16|((z>>16)&0xFF)<<8|((z>>24)&0xFF)))
 
 // Structures
 typedef struct {
@@ -411,6 +414,8 @@ void sendSubmitResponse(StratumClient& sClient, uint8_t errCode) {
     strcat(ds, "}\n");
     sClient.client.print(ds);
 
+    logIt(LOG_LEVEL_DEBUG, "Response: %s\n", ds);
+
   }
 
 }
@@ -428,8 +433,7 @@ void handleSubmit(StratumClient& sClient, JsonDocument &doc) {
 
   HashBlock hb;
 
-  logIt(LOG_LEVEL_DEBUG, "Work submitted:\n*************\nUser Name: %s\nJob ID:%s\nExtra Nonce 2: %s\nTimestamp: %s\nNonce: %s\n", userName, jid, extraNonce2, timestamp, nonce);
-
+  
   // See if this is the job we're currently working on
   // There is no backog, so you will see rejections.
   uint32_t job = decodeHex(jid);
@@ -462,6 +466,11 @@ void handleSubmit(StratumClient& sClient, JsonDocument &doc) {
   // Get the difficulty of the submitted block
   double blockDiff = difficultyFromHash(hash);
 
+
+  logIt(LOG_LEVEL_DEBUG, "Work submitted:\n***************\nUser Name: %s\nJob ID:%s\nExtra Nonce 2: %s\nTimestamp: %s\nNonce: %s  (%lu)\nDifficulty: %0.5f\n", 
+    userName, jid, extraNonce2, timestamp, nonce, BYTESWAP32(hb.nonce), blockDiff);
+
+
   // See if this beats our previous record
   if( blockDiff > stats.bestDifficulty ) {
     stats.bestDifficulty = blockDiff;
@@ -474,7 +483,7 @@ void handleSubmit(StratumClient& sClient, JsonDocument &doc) {
     if( blockDiff >= BLOCK_DIFFICULTY ) {    
       stats.blockSolutions++;
       newJobRequired = true;
-      logIt(LOG_LEVEL_DEBUG, "Block Solution found!\n");
+      logIt(LOG_LEVEL_DEBUG, "----> Block Solution found! <---->\n");
     } else {
       stats.poolSolutions++;
     }
@@ -818,7 +827,7 @@ void loop() {
 
   // Print out statistics periodically
   if( STATS_REFRESH_FREQUENCY_MS && millis() - statsMillis >= STATS_REFRESH_FREQUENCY_MS ) {
-    Serial.printf("Jobs: %d  Pool Sol: %d  Block Sol: %d  Clients: %d  Best Diff: %.5f  Rej Shares: %d\n", 
+    Serial.printf("Jobs: %d  Pool Solutions: %d  Block Solutions: %d  Clients: %d  Best Diff: %.5f  Rej Shares: %d\n", 
       stats.blockTemplates, stats.poolSolutions, stats.blockSolutions, clients, stats.bestDifficulty, stats.rejectedShares);
     statsMillis = millis();
   }
